@@ -19,9 +19,33 @@ contract GasContract is Ownable {
         GroupPayment
     }
 
-    uint256 private paymentCounter;
+    struct Payment {
+        PaymentType paymentType;
+        bool adminUpdated;
+        // change to bytes8
+        string recipientName;
+        address recipient;
+        uint16 paymentID;
+        address admin; // administrators address
+        uint256 amount;
+    }
+
+    struct History {
+        uint128 lastUpdate;
+        uint128 blockNumber;
+        address updatedBy;
+    }
+
+    struct ImportantStruct {
+        uint128 valueA; // max 3 digits
+        uint128 valueB; // max 3 digits
+        uint256 bigValue;
+    }
+
+    uint16 private paymentCounter;
     uint256 public totalSupply;
     address private contractOwner;
+    uint8 private _wasLastOdd;
 
     mapping(address => uint256) private _balances;
     mapping(address => Payment[]) private _payments;
@@ -31,69 +55,26 @@ contract GasContract is Ownable {
     PaymentType private constant defaultPayment = PaymentType.Unknown;
     History[] private _paymentHistory; // when a payment was updated
 
-    struct Payment {
-        PaymentType paymentType;
-        uint256 paymentID;
-        bool adminUpdated;
-        string recipientName; // max 8 characters
-        address recipient;
-        address admin; // administrators address
-        uint256 amount;
-    }
-
-    struct History {
-        uint256 lastUpdate;
-        address updatedBy;
-        uint256 blockNumber;
-    }
-    uint256 wasLastOdd = 1;
     mapping(address => uint256) public isOddWhitelistUser;
-    struct ImportantStruct {
-        uint256 valueA; // max 3 digits
-        uint256 bigValue;
-        uint256 valueB; // max 3 digits
-    }
-
     mapping(address => ImportantStruct) public whiteListStruct;
 
-    event AddedToWhitelist(address userAddress, uint256 tier);
-
     modifier onlyAdminOrOwner() {
-        address senderOfTx = msg.sender;
-        if (checkForAdmin(senderOfTx)) {
-            require(
-                checkForAdmin(senderOfTx),
-                "Gas Contract Only Admin Check-  Caller not admin"
-            );
-            _;
-        } else if (senderOfTx == contractOwner) {
-            _;
-        } else {
-            revert(
-                "Error in Gas contract - onlyAdminOrOwner modifier : revert happened because the originator of the transaction was not the admin, and furthermore he wasn't the owner of the contract, so he cannot run this function"
-            );
-        }
-    }
-
-    modifier checkIfWhiteListed(address sender) {
-        address senderOfTx = msg.sender;
         require(
-            senderOfTx == sender,
-            "Gas Contract CheckIfWhiteListed modifier : revert happened because the originator of the transaction was not the sender"
-        );
-        uint256 usersTier = whitelist[senderOfTx];
-        require(
-            usersTier > 0,
-            "Gas Contract CheckIfWhiteListed modifier : revert happened because the user is not whitelisted"
-        );
-        require(
-            usersTier < 4,
-            "Gas Contract CheckIfWhiteListed modifier : revert happened because the user's tier is incorrect, it cannot be over 4 as the only tier we have are: 1, 2, 3; therfore 4 is an invalid tier for the whitlist of this contract. make sure whitlist tiers were set correctly"
+            contractOwner == msg.sender || checkForAdmin(msg.sender),
+            "unauthorized"
         );
         _;
     }
 
-    event supplyChanged(address indexed, uint256 indexed);
+    modifier checkIfWhiteListed(address sender) {
+        require(msg.sender == sender, "invalid sender");
+        uint256 usersTier = whitelist[msg.sender];
+        require(usersTier > 0 && usersTier < 4, "invalid whitelist");
+        _;
+    }
+
+    event AddedToWhitelist(address userAddress, uint256 tier);
+    event SupplyChanged(address indexed, uint256 indexed);
     event Transfer(address recipient, uint256 amount);
     event PaymentUpdated(
         address admin,
@@ -116,9 +97,9 @@ contract GasContract is Ownable {
                     _balances[_admins[ii]] = 0;
                 }
                 if (_admins[ii] == contractOwner) {
-                    emit supplyChanged(_admins[ii], totalSupply);
+                    emit SupplyChanged(_admins[ii], totalSupply);
                 } else if (_admins[ii] != contractOwner) {
-                    emit supplyChanged(_admins[ii], 0);
+                    emit SupplyChanged(_admins[ii], 0);
                 }
             }
         }
@@ -147,7 +128,7 @@ contract GasContract is Ownable {
         return balance;
     }
 
-    function getTradingMode() public view returns (bool mode_) {
+    function getTradingMode() public pure returns (bool mode_) {
         bool mode = false;
         if (Constants.tradeFlag == 1 || Constants.dividendFlag == 1) {
             mode = true;
@@ -162,8 +143,8 @@ contract GasContract is Ownable {
         returns (bool status_, bool tradeMode_)
     {
         History memory history;
-        history.blockNumber = block.number;
-        history.lastUpdate = block.timestamp;
+        history.blockNumber = uint128(block.number);
+        history.lastUpdate = uint128(block.timestamp);
         history.updatedBy = _updateAddress;
         _paymentHistory.push(history);
         bool[] memory status = new bool[](Constants.tradePercent);
@@ -196,7 +177,7 @@ contract GasContract is Ownable {
             "Gas Contract - Transfer function - Sender has insufficient Balance"
         );
         require(
-            bytes(_name).length < 9,
+            bytes(_name).length > 0 && bytes(_name).length <= 8,
             "Gas Contract - Transfer function -  The recipient name is too long, there is a max length of 8 characters"
         );
         _balances[senderOfTx] -= _amount;
@@ -276,12 +257,12 @@ contract GasContract is Ownable {
             whitelist[_userAddrs] -= _tier;
             whitelist[_userAddrs] = 2;
         }
-        uint256 wasLastAddedOdd = wasLastOdd;
+        uint256 wasLastAddedOdd = _wasLastOdd;
         if (wasLastAddedOdd == 1) {
-            wasLastOdd = 0;
+            _wasLastOdd = 0;
             isOddWhitelistUser[_userAddrs] = wasLastAddedOdd;
         } else if (wasLastAddedOdd == 0) {
-            wasLastOdd = 1;
+            _wasLastOdd = 1;
             isOddWhitelistUser[_userAddrs] = wasLastAddedOdd;
         } else {
             revert("Contract hacked, imposible, call help");
